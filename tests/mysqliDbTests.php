@@ -2,6 +2,12 @@
 require_once ("../MysqliDb.php");
 error_reporting(E_ALL);
 
+function pretty_print($array) {
+  echo '<pre>';
+  print_r($array);
+  echo '</pre>';
+}
+
 $prefix = 't_';
 $db = new Mysqlidb('localhost', 'root', '', 'testdb');
 if(!$db) die("Database error");
@@ -322,6 +328,34 @@ if ($db->count != 2) {
     exit;
 }
 ///
+$db->join("users u", "p.userId=u.id", "LEFT");
+$db->joinWhere('t_users u', 'u.id', 'non existant value');
+$products = $db->get ("products p", null, "u.login, p.productName");
+if ($db->count != 5) {
+  echo 'Invalid product count on joinWhere';
+  exit;
+}
+foreach($products as $product) {
+  if ($product['login']) {
+    echo 'Invalid login result on joinWhere';
+    exit;
+  }
+}
+///
+$db->join("users u", "p.userId=u.id", "LEFT");
+$db->joinOrWhere('t_users u', 'u.id', 'non existant value');
+$products = $db->get ("products p", null, "u.login, p.productName");
+if ($db->count != 5) {
+  echo 'Invalid product count on joinOrWhere';
+  exit;
+}
+foreach($products as $product) {
+  if (!$product['login']) {
+    echo 'Invalid login result on joinWhere';
+    exit;
+  }
+}
+///
 $db->where("id = ? or id = ?", Array(1,2));
 $res = $db->get ("users");
 if ($db->count != 2) {
@@ -362,8 +396,8 @@ if ($c != 3) {
 }
 unset ($cnt);
 
-$data = $db->get('users');
-if (count($data) != 3) {
+$users = $db->get('users');
+if (count($users) != 3) {
     echo "copy with subquery data count failed";
     exit;
 }
@@ -410,6 +444,47 @@ if (key ($result) != 1 && !is_object ($result[1])) {
     exit;
 }
 
+$expectedIDs = [
+    'users' => [5, 6, 7],
+    'products' => [6,7,8,9,10],
+];
+
+// multi-insert test with autoincrement
+foreach ($data as $name => $datas) {
+
+    // remove previous entries to ensure avoiding PRIMARY-KEY collisions here
+    $db->delete($name);
+
+    // actual insertion test
+    $ids = $db->insertMulti($name, $datas);
+
+    // check results
+    if(!$ids) {
+        echo "failed to multi-insert: ".$db->getLastQuery() ."\n". $db->getLastError();
+        exit;
+    } elseif($ids !== $expectedIDs[$name]) {
+        pretty_print($ids);
+        echo "multi-insert succeeded, but unexpected id's: ".$db->getLastQuery() ."\n". $db->getLastError();
+        exit;
+    }
+}
+
+// skip last user here, since it has other keys than the others
+unset($data['users'][2]);
+
+// multi-insert test with autoincrement and overriding column-names
+foreach ($data as $name => $datas) {
+
+    // remove previous entries to ensure avoiding PRIMARY-KEY collisions here
+    $db->delete($name);
+
+    // actual insertion test
+    if(!$db->insertMulti($name, $datas, array_keys($datas[0]))) {
+        echo "failed to multi-insert: ".$db->getLastQuery() ."\n". $db->getLastError();
+        exit;
+    }
+}
+
 ///
 //TODO: insert test
 $db->delete("users");
@@ -422,7 +497,10 @@ $db->delete("products");
 
 //print_r($db->rawQuery("CALL simpleproc(?)",Array("test")));
 
-print_r ($db->trace);
+echo '<pre>';
+pretty_print($db->trace);
+echo '</pre>';
 echo "All done\n";
 echo "Memory usage: ".memory_get_peak_usage()."\n";
+
 ?>
